@@ -12,3 +12,7 @@ obj-$(CONFIG_FAIR_SHARE)		+= fair_share.o
 obj-$(CONFIG_STEP_WISE)			+= step_wise.o
 obj-$(CONFIG_THERMAL_GOV_PID)			+= pid_thermal_gov.o
 obj-$(CONFIG_USER_SPACE)		+= user_space.o
+#Derrick.Liu add two coolers
+obj-y					+=qic_fps_cooler.o
+obj-y					+=qic_chg_cooler.o
+#Derrick.Liu add two coolers

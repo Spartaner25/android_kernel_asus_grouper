@@ -1193,7 +1193,7 @@ extern int fb_find_mode(struct fb_var_screeninfo *var,
 			unsigned int dbsize,
 			const struct fb_videomode *default_mode,
 			unsigned int default_bpp);
-
+extern int set_frame_rate(int fps);/*Derrick.Liu add new coolers fps_cool*/
 #endif /* __KERNEL__ */
 
 #endif /* _LINUX_FB_H */

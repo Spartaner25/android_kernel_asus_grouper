@@ -30,6 +30,9 @@
 #define AR0833_IOCTL_GET_MODE		_IOR('o', 6, struct ar0833_modeinfo)
 #define AR0833_IOCTL_SET_HDR_COARSE_TIME	_IOW('o', 7, struct ar0833_hdr)
 #define AR0833_IOCTL_SET_GROUP_HOLD	_IOW('o', 8, struct ar0833_ae)
+#define AR0833_IOCTL_GET_FUSEID		_IOR('o', 9, struct nvc_fuseid)
+#define AR0833_IOCTL_GET_FLASH_CAP	_IOR('o', 10, __u32)
+#define AR0833_IOCTL_SET_FLASH_MODE	_IOW('o', 11, struct ar0833_flash_control)
 
 struct ar0833_mode {
 	int xres;
@@ -89,14 +92,23 @@ struct ar0833_sensordata {
 	__u8  fuse_id[16];
 };
 
+struct ar0833_flash_control {
+    __u8 enable;
+    __u8 edge_trig_en;
+    __u8 start_edge;
+    __u8 repeat;
+    __u16 delay_frm;
+};
+
 #ifdef __KERNEL__
 struct ar0833_power_rail {
 	struct regulator *dvdd;
 	struct regulator *avdd;
-	struct regulator *iovdd;
+	struct regulator *iovdd; // will not use in GEN3
 };
 
 struct ar0833_platform_data {
+	struct ar0833_flash_control flash_cap;
 	int (*power_on)(struct ar0833_power_rail *pw);
 	int (*power_off)(struct ar0833_power_rail *pw);
 };

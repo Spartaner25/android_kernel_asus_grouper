@@ -383,3 +383,6 @@ config TEGRA_BPC_MGMT
 	help
 	  This driver reduces cpu frequency/voltage on gpio event from the
 	  battery current monitor device.
+
+config CHARGER_BQ24160
+	bool "BQ2416x Battery Charger Driver"

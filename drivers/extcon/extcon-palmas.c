@@ -40,15 +40,19 @@ struct palmas_extcon {
 	struct extcon_dev	*edev;
 	int			vbus_irq;
 	int			id_irq;
+	int			vac_irq;
 	char			vbus_irq_name[MAX_INT_NAME];
 	char			id_irq_name[MAX_INT_NAME];
+	char			vac_irq_name[MAX_INT_NAME];
 	bool			enable_vbus_detection;
 	bool			enable_id_pin_detection;
+	bool			enable_vac_detection;
 };
 
 const char *palmas_excon_cable[] = {
 	[0] = "USB",
 	[1] = "USB-Host",
+	[2] = "AC",
 	NULL,
 };
 
@@ -104,6 +108,32 @@ static int palmas_extcon_id_cable_update(
 	return 0;
 }
 
+static int palmas_extcon_vac_cable_update(
+		struct palmas_extcon *palma_econ)
+{
+	int ret;
+	unsigned int status;
+
+	ret = palmas_read(palma_econ->palmas, PALMAS_INTERRUPT_BASE,
+				PALMAS_INT2_LINE_STATE,	&status);
+	if (ret < 0) {
+		dev_err(palma_econ->dev,
+			"INT2_LINE_STATE read failed: %d\n", ret);
+		return ret;
+	}
+
+	if (status & PALMAS_INT2_LINE_STATE_VAC_ACOK)
+		extcon_set_cable_state(palma_econ->edev, "AC", true);
+	else
+		extcon_set_cable_state(palma_econ->edev, "AC", false);
+
+	dev_info(palma_econ->dev, "VAC %s status: 0x%02x\n",
+		(status & PALMAS_INT2_LINE_STATE_VAC_ACOK) ? "Valid" : "Invalid",
+		status);
+
+	return 0;
+}
+
 static irqreturn_t palmas_extcon_irq(int irq, void *data)
 {
 	struct palmas_extcon *palma_econ = data;
@@ -112,6 +142,8 @@ static irqreturn_t palmas_extcon_irq(int irq, void *data)
 		palmas_extcon_vbus_cable_update(palma_econ);
 	else if (irq == palma_econ->id_irq)
 		palmas_extcon_id_cable_update(palma_econ);
+	else if (irq == palma_econ->vac_irq)
+		palmas_extcon_vac_cable_update(palma_econ);
 	else
 		dev_err(palma_econ->dev, "Unknown interrupt %d\n", irq);
 
@@ -157,8 +189,10 @@ static int __devinit palmas_extcon_probe(struct platform_device *pdev)
 
 	palma_econ->enable_vbus_detection = epdata->enable_vbus_detection;
 	palma_econ->enable_id_pin_detection = epdata->enable_id_pin_detection;
+	palma_econ->enable_vac_detection = epdata->enable_vac_detection;
 	palma_econ->vbus_irq = platform_get_irq(pdev, 0);
 	palma_econ->id_irq = platform_get_irq(pdev, 1);
+	palma_econ->vac_irq = platform_get_irq(pdev, 2);
 
 	ret = extcon_dev_register(palma_econ->edev, NULL);
 	if (ret < 0) {
@@ -214,6 +248,25 @@ static int __devinit palmas_extcon_probe(struct platform_device *pdev)
 		}
 	}
 
+	if (epdata->enable_vac_detection) {
+		ret = palmas_extcon_vac_cable_update(palma_econ);
+		if (ret < 0) {
+			dev_err(&pdev->dev,
+				"VAC Cable init failed: %d\n", ret);
+			goto out;
+		}
+		snprintf(palma_econ->vac_irq_name, MAX_INT_NAME,
+			"vac-%s\n", dev_name(palma_econ->dev));
+		ret = request_threaded_irq(palma_econ->vac_irq, NULL,
+			palmas_extcon_irq, IRQF_ONESHOT | IRQF_EARLY_RESUME,
+			palma_econ->vac_irq_name, palma_econ);
+		if (ret < 0) {
+			dev_err(palma_econ->dev, "request irq %d failed: %d\n",
+				palma_econ->vac_irq, ret);
+			goto out;
+		}
+	}
+
 	device_set_wakeup_capable(&pdev->dev, 1);
 	return 0;
 out_free_vbus:
@@ -233,6 +286,8 @@ static int __devexit palmas_extcon_remove(struct platform_device *pdev)
 		free_irq(palma_econ->vbus_irq, palma_econ);
 	if (palma_econ->enable_id_pin_detection)
 		free_irq(palma_econ->id_irq, palma_econ);
+	if (palma_econ->enable_vac_detection)
+		free_irq(palma_econ->vac_irq, palma_econ);
 	return 0;
 }
 
@@ -262,6 +317,8 @@ static int palmas_extcon_suspend(struct device *dev)
 			enable_irq_wake(palma_econ->vbus_irq);
 		if (palma_econ->enable_id_pin_detection)
 			enable_irq_wake(palma_econ->id_irq);
+		if (palma_econ->enable_vac_detection)
+			enable_irq_wake(palma_econ->vac_irq);
 	}
 	return 0;
 }
@@ -275,6 +332,8 @@ static int palmas_extcon_resume(struct device *dev)
 			disable_irq_wake(palma_econ->vbus_irq);
 		if (palma_econ->enable_id_pin_detection)
 			disable_irq_wake(palma_econ->id_irq);
+		if (palma_econ->enable_vac_detection)
+			disable_irq_wake(palma_econ->vac_irq);
 	}
 	return 0;
 };

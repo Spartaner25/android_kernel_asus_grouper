@@ -36,23 +36,72 @@
 #include "board-macallan.h"
 #include "dvfs.h"
 
+#include "dvfs.h"
+
+#include <linux/wlan_plat.h>
+
 #define MACALLAN_SD_CD	TEGRA_GPIO_PV2
 #define MACALLAN_SD_WP	TEGRA_GPIO_PQ4
 #define MACALLAN_WLAN_PWR	TEGRA_GPIO_PCC5
-#define MACALLAN_WLAN_RST	TEGRA_GPIO_PX7
+//#define MACALLAN_WLAN_RST	TEGRA_GPIO_PX7
 #define MACALLAN_WLAN_WOW	TEGRA_GPIO_PU5
+#if defined(CONFIG_WLCORE_EDP_SUPPORT)
+#define ON 808 /* 808.236 mW */
+#define OFF 0
+static unsigned int wl_states[] = {ON, OFF};
+#endif
+
 static void (*wifi_status_cb)(int card_present, void *dev_id);
 static void *wifi_status_cb_devid;
 static int macallan_wifi_status_register(void (*callback)(int , void *), void *);
 
+static int macallan_wifi_reset(int on);
 static int macallan_wifi_power(int on);
 static int macallan_wifi_set_carddetect(int val);
 
+#if 0
 static struct wl12xx_platform_data macallan_wl12xx_wlan_data __initdata = {
 	.board_ref_clock = WL12XX_REFCLOCK_26,
 	.board_tcxo_clock = 1,
 	.set_power = macallan_wifi_power,
 	.set_carddetect = macallan_wifi_set_carddetect,
+#if defined(CONFIG_WLCORE_EDP_SUPPORT)
+	.edp_info = {
+		.client_info = {
+			.name = "wl_edp_client",
+			.states = wl_states,
+			.num_states = ARRAY_SIZE(wl_states),
+			.e0_index = 0,
+			.priority = EDP_MAX_PRIO,
+		},
+		.registered = false,
+	},
+#endif
+};
+#endif
+
+static struct wifi_platform_data macallan_wifi_control = {
+        .set_power      = macallan_wifi_power,
+        .set_reset      = macallan_wifi_reset,
+        .set_carddetect = macallan_wifi_set_carddetect,
+};
+
+static struct resource wifi_resource[] = {
+        [0] = {
+                .name   = "bcm4329_wlan_irq",
+                .flags  = IORESOURCE_IRQ | IORESOURCE_IRQ_HIGHLEVEL
+                                | IORESOURCE_IRQ_SHAREABLE,
+        },
+};
+
+static struct platform_device macallan_wifi_device = {
+        .name           = "bcm4329_wlan",
+        .id             = 1,
+        .num_resources  = 1,
+        .resource       = wifi_resource,
+        .dev            = {
+                .platform_data = &macallan_wifi_control,
+        },
 };
 
 static struct resource sdhci_resource0[] = {
@@ -215,27 +264,33 @@ static int macallan_wifi_set_carddetect(int val)
 	return 0;
 }
 
+#if 0
 static int macallan_wifi_power(int on)
 {
 	pr_debug("%s: %d\n", __func__, on);
 
 	if (on) {
+/*
 		gpio_set_value(MACALLAN_WLAN_RST, 1);
 		mdelay(100);
 		gpio_set_value(MACALLAN_WLAN_RST, 0);
 		mdelay(100);
 		gpio_set_value(MACALLAN_WLAN_RST, 1);
 		mdelay(100);
+*/
 		gpio_set_value(MACALLAN_WLAN_PWR, 1);
 		mdelay(200);
 	} else {
+/*
 		gpio_set_value(MACALLAN_WLAN_RST, 0);
 		mdelay(100);
+*/
 		gpio_set_value(MACALLAN_WLAN_PWR, 0);
 	}
 
 	return 0;
 }
+#endif
 
 static int __init macallan_wifi_init(void)
 {
@@ -244,9 +299,11 @@ static int __init macallan_wifi_init(void)
 	rc = gpio_request(MACALLAN_WLAN_PWR, "wlan_power");
 	if (rc)
 		pr_err("WLAN_PWR gpio request failed:%d\n", rc);
+/*
 	rc = gpio_request(MACALLAN_WLAN_RST, "wlan_rst");
 	if (rc)
 		pr_err("WLAN_RST gpio request failed:%d\n", rc);
+*/
 	rc = gpio_request(MACALLAN_WLAN_WOW, "bcmsdh_sdmmc");
 	if (rc)
 		pr_err("WLAN_WOW gpio request failed:%d\n", rc);
@@ -254,21 +311,103 @@ static int __init macallan_wifi_init(void)
 	rc = gpio_direction_output(MACALLAN_WLAN_PWR, 0);
 	if (rc)
 		pr_err("WLAN_PWR gpio direction configuration failed:%d\n", rc);
+/*
 	rc = gpio_direction_output(MACALLAN_WLAN_RST, 0);
 	if (rc)
 		pr_err("WLAN_RST gpio direction configuration failed:%d\n", rc);
+*/
 	rc = gpio_direction_input(MACALLAN_WLAN_WOW);
 	if (rc)
 		pr_err("WLAN_WOW gpio direction configuration failed:%d\n", rc);
+
+#if 0
 	macallan_wl12xx_wlan_data.irq = gpio_to_irq(MACALLAN_WLAN_WOW);
 		wl12xx_set_platform_data(&macallan_wl12xx_wlan_data);
+#endif
+
+	wifi_resource[0].start = wifi_resource[0].end =
+                gpio_to_irq(MACALLAN_WLAN_WOW);
+
+        platform_device_register(&macallan_wifi_device);
 	return 0;
+}
+
+static struct regulator *macallan_vddio_com_1v8;
+#define MACALLAN_VDD_WIFI_1V8 "vddio_wifi_1v8"
+
+static int macallan_wifi_regulator_enable(void)
+{
+        int ret = 0;
+
+        /* Enable COM's vddio_com_1v8 regulator*/
+        if (IS_ERR_OR_NULL(macallan_vddio_com_1v8)) {
+                macallan_vddio_com_1v8 = regulator_get(&macallan_wifi_device.dev,
+                        MACALLAN_VDD_WIFI_1V8);
+                if (IS_ERR_OR_NULL(macallan_vddio_com_1v8)) {
+                        pr_err("Couldn't get regulator "
+                                MACALLAN_VDD_WIFI_1V8 "\n");
+                        return PTR_ERR(macallan_vddio_com_1v8);
+                }
+
+                ret = regulator_enable(macallan_vddio_com_1v8);
+                if (ret < 0) {
+                        pr_err("Couldn't enable regulator "
+                                MACALLAN_VDD_WIFI_1V8 "\n");
+                        regulator_put(macallan_vddio_com_1v8);
+                        macallan_vddio_com_1v8 = NULL;
+                        return ret;
+                }
+        }
+
+        return ret;
+}
+
+static void macallan_wifi_regulator_disable(void)
+{
+        /* Disable COM's vddio_com_1v8 regulator*/
+        if (!IS_ERR_OR_NULL(macallan_vddio_com_1v8)) {
+                regulator_disable(macallan_vddio_com_1v8);
+                regulator_put(macallan_vddio_com_1v8);
+                macallan_vddio_com_1v8 = NULL;
+        }
+}
+
+static int macallan_wifi_power(int on)
+{
+        int ret = 0;
+
+        pr_debug("%s: %d\n", __func__, on);
+        /* Enable COM's regulators on wi-fi poer on*/
+        if (on == 1) {
+                ret = macallan_wifi_regulator_enable();
+                if (ret < 0) {
+                        pr_err("Failed to enable COM regulators\n");
+                        return ret;
+                }
+        }
+
+        gpio_set_value(MACALLAN_WLAN_PWR, on);
+        mdelay(100);
+
+        /* Disable COM's regulators on wi-fi poer off*/
+        if (on != 1) {
+                pr_debug("Disabling COM regulators\n");
+                macallan_wifi_regulator_disable();
+        }
+
+        return ret;
+}
+
+static int macallan_wifi_reset(int on)
+{
+        pr_debug("%s: do nothing\n", __func__);
+        return 0;
 }
 
 #ifdef CONFIG_TEGRA_PREPOWER_WIFI
 static int __init macallan_wifi_prepower(void)
 {
-	if (!machine_is_macallan())
+	if (!machine_is_macallan() || get_androidboot_mode_charger())
 		return 0;
 
 	macallan_wifi_power(1);

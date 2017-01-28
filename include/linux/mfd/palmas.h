@@ -20,6 +20,7 @@
 #include <linux/leds.h>
 #include <linux/regmap.h>
 #include <linux/regulator/driver.h>
+#include <linux/iio/machine.h>
 
 #define PALMAS_NUM_CLIENTS		3
 
@@ -208,6 +209,9 @@ struct palmas_rtc_platform_data {
 struct palmas_gpadc_platform_data {
 	int channel0_current_uA;
 	int channel3_current_uA;
+	bool extended_delay;
+
+	struct iio_map *iio_maps;
 };
 
 struct palmas_pinctrl_config {
@@ -228,6 +232,7 @@ struct palmas_extcon_platform_data {
 	const char *connection_name;
 	bool enable_vbus_detection;
 	bool enable_id_pin_detection;
+	bool enable_vac_detection;
 };
 
 struct palmas_platform_data {
@@ -255,6 +260,9 @@ struct palmas_platform_data {
 
 	/* Long press delay for hard shutdown */
 	int long_press_delay;
+
+	/* system off type by long press key */
+	int poweron_lpk;
 };
 
 /* Define the palmas IRQ numbers */
@@ -309,6 +317,7 @@ struct palmas_pmic {
 	int smps123;
 	int smps457;
 	bool smps10_regulator_enabled;
+	bool smps10_boost_disable_deferred;
 
 	unsigned int ramp_delay[PALMAS_NUM_REGS];
 	unsigned int current_mode_reg[PALMAS_NUM_REGS];
@@ -1289,6 +1298,11 @@ struct palmas_pmic {
 #define PALMAS_SWOFF_HWRST_VSYS_LO_SHIFT			1
 #define PALMAS_SWOFF_HWRST_GPADC_SHUTDOWN			0x01
 #define PALMAS_SWOFF_HWRST_GPADC_SHUTDOWN_SHIFT			0
+
+/* Register bit values for poweron_lpk */
+#define PALMAS_SWOFF_COLDRST_PWRON_LPK_DEFAULT		-1
+#define PALMAS_SWOFF_COLDRST_PWRON_LPK_SHUTDOWN	0
+#define PALMAS_SWOFF_COLDRST_PWRON_LPK_RESTART		1
 
 /* Bit definitions for SWOFF_COLDRST */
 #define PALMAS_SWOFF_COLDRST_PWRON_LPK				0x80

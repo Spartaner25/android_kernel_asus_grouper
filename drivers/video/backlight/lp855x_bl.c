@@ -34,6 +34,8 @@ struct lp855x {
 	struct lp855x_platform_data *pdata;
 };
 
+static struct lp855x *g_lp;
+
 static int lp855x_read_byte(struct lp855x *lp, u8 reg, u8 *data)
 {
 	int ret;
@@ -235,6 +237,17 @@ static const struct attribute_group lp855x_attr_group = {
 	.attrs = lp855x_attributes,
 };
 
+int lp855x_init_reg()
+{
+	int ret;
+
+	ret = lp855x_init_registers(g_lp);
+	if (ret) {
+		dev_err(g_lp->dev, "i2c communication err: %d", ret);
+	}
+	return ret;
+}
+
 static int lp855x_probe(struct i2c_client *cl, const struct i2c_device_id *id)
 {
 	struct lp855x *lp;
@@ -264,19 +277,25 @@ static int lp855x_probe(struct i2c_client *cl, const struct i2c_device_id *id)
 
 	mutex_init(&lp->xfer_lock);
 
+	//set the registers while calling the panel enable function
+	/*
 	ret = lp855x_init_registers(lp);
 	if (ret) {
 		dev_err(lp->dev, "i2c communication err: %d", ret);
 		if (mode == REGISTER_BASED)
 			goto err_dev;
 	}
+	*/
 
+	//use default backlight driver (pwm-backlight) to register backlight to support PRISM
+	/*
 	ret = lp855x_backlight_register(lp);
 	if (ret) {
 		dev_err(lp->dev,
 			"failed to register backlight. err: %d\n", ret);
 		goto err_dev;
 	}
+	*/
 
 	ret = sysfs_create_group(&lp->dev->kobj, &lp855x_attr_group);
 	if (ret) {
@@ -284,7 +303,9 @@ static int lp855x_probe(struct i2c_client *cl, const struct i2c_device_id *id)
 		goto err_sysfs;
 	}
 
-	backlight_update_status(lp->bl);
+	//use default backlight driver (pwm-backlight) to register backlight to support PRISM
+	//backlight_update_status(lp->bl);
+	g_lp = lp;
 	return 0;
 
 err_sysfs:
