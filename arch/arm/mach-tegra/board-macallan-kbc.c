@@ -51,9 +51,9 @@ static struct gpio_keys_button macallan_e1545_keys[] = {
 	[0] = GPIO_KEY(KEY_POWER, PQ0, 1),
 	[1] = GPIO_KEY(KEY_VOLUMEUP, PR2, 0),
 	[2] = GPIO_KEY(KEY_VOLUMEDOWN, PR1, 0),
-	[3] = GPIO_KEY(KEY_HOME, PI5, 0),
-	[4] = GPIO_KEY(KEY_BACK, PQ2, 0), /* Todo : CAMF */
-	[5] = GPIO_KEY(KEY_MENU, PR0, 0), /* Todo : CAMS */
+//	[3] = GPIO_KEY(KEY_HOME, PI5, 0),
+//	[4] = GPIO_KEY(KEY_BACK, PQ2, 0), /* Todo : CAMF */
+//	[5] = GPIO_KEY(KEY_MENU, PR0, 0), /* Todo : CAMS */
 };
 
 static int macallan_wakeup_key(void)

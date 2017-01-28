@@ -34,7 +34,7 @@
 #include <linux/fb.h>
 
 #include <asm/fb.h>
-
+#include "../thermal/qic_coolers.h" /*Derrick.Liu add new coolers fps_cool*/
 
     /*
      *  Frame buffer device initialization and setup routines
@@ -754,7 +754,7 @@ fb_read(struct file *file, char __user *buf, size_t count, loff_t *ppos)
 
 	if (info->fbops->fb_read)
 		return info->fbops->fb_read(info, buf, count, ppos);
-	
+
 	total_size = info->screen_size;
 
 	if (total_size == 0)
@@ -819,7 +819,7 @@ fb_write(struct file *file, const char __user *buf, size_t count, loff_t *ppos)
 
 	if (info->fbops->fb_write)
 		return info->fbops->fb_write(info, buf, count, ppos);
-	
+
 	total_size = info->screen_size;
 
 	if (total_size == 0)
@@ -1045,7 +1045,7 @@ fb_set_var(struct fb_info *info, struct fb_var_screeninfo *var)
 
 int
 fb_blank(struct fb_info *info, int blank)
-{	
+{
  	int ret = -EINVAL;
 
  	if (blank > FB_BLANK_POWERDOWN)
@@ -1064,7 +1064,37 @@ fb_blank(struct fb_info *info, int blank)
 
  	return ret;
 }
+/*Derrick.Liu add new coolers fps_cool*/
+int set_frame_rate(int fps)
+{
+	int ret = 0;
+	int fbidx = 0;
+	struct fb_info *info = registered_fb[fbidx];
+	struct fb_var_screeninfo var = info->var; //get last fb_var_screeninfo
 
+	memcpy(&var, &(info->var), sizeof(struct fb_var_screeninfo));
+
+	if(fps != 39 || fps != 39)
+		return -EINVAL;
+
+	if (fps == 39)
+		var.lower_margin = 833;
+	else if (fps == 59)
+		var.lower_margin = 10;
+
+	if (!lock_fb_info(info))
+			return -ENODEV;
+
+	pr_err("[**]%s %d -> %d\n", __func__, info->var.lower_margin, var.lower_margin);
+	console_lock();
+	info->flags |= FBINFO_MISC_USEREVENT;
+	ret = fb_set_var(info, &var);							//force change
+	info->flags &= ~FBINFO_MISC_USEREVENT;
+	console_unlock();
+	unlock_fb_info(info);
+	return ret;
+}
+/*Derrick.Liu add new coolers fps_cool*/
 static long do_fb_ioctl(struct fb_info *info, unsigned int cmd,
 			unsigned long arg)
 {
@@ -1093,6 +1123,21 @@ static long do_fb_ioctl(struct fb_info *info, unsigned int cmd,
 		if (!lock_fb_info(info))
 			return -ENODEV;
 		console_lock();
+
+		/*Derrick.Liu add new coolers fps_cool*/
+		if (get_g_fps_apply()) //when fps cooler is applied...
+		{
+			pr_err("[**]%s var.lower_margin  %d\n", __func__, var.lower_margin);
+			if (get_g_fps_cooling_status())
+			{
+				var.lower_margin = 833;	//Force FPS change to 39  check sys/class/graphics/fb0/nvdps
+				pr_err("[**]fps cooling Start now (%d), force var.lower_margin %d\n", get_g_fps_cooling_status(), var.lower_margin);
+			}else{
+				pr_err("[**]fps cooling Stop now (%d)\n", get_g_fps_cooling_status());
+			}
+		}
+		/*Derrick.Liu add new coolers fps_cool*/
+
 		info->flags |= FBINFO_MISC_USEREVENT;
 		ret = fb_set_var(info, &var);
 		info->flags &= ~FBINFO_MISC_USEREVENT;
@@ -1168,10 +1213,8 @@ static long do_fb_ioctl(struct fb_info *info, unsigned int cmd,
 		event.data = &con2fb;
 		if (!lock_fb_info(info))
 			return -ENODEV;
-		console_lock();
 		event.info = info;
 		ret = fb_notifier_call_chain(FB_EVENT_SET_CONSOLE_MAP, &event);
-		console_unlock();
 		unlock_fb_info(info);
 		break;
 	case FBIOBLANK:
@@ -1442,7 +1485,7 @@ out:
 	return res;
 }
 
-static int 
+static int
 fb_release(struct inode *inode, struct file *file)
 __acquires(&info->lock)
 __releases(&info->lock)
@@ -1613,7 +1656,7 @@ static int do_register_framebuffer(struct fb_info *fb_info)
 			fb_info->pixmap.access_align = 32;
 			fb_info->pixmap.flags = FB_PIXMAP_DEFAULT;
 		}
-	}	
+	}
 	fb_info->pixmap.offset = 0;
 
 	if (!fb_info->pixmap.blit_x)

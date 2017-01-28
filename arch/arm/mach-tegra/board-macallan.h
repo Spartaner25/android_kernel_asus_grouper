@@ -36,14 +36,20 @@
 /* Audio-related GPIOs */
 #define TEGRA_GPIO_CDC_IRQ		TEGRA_GPIO_PW3
 #define TEGRA_GPIO_LDO1_EN		TEGRA_GPIO_PV3
-#define TEGRA_GPIO_CODEC1_EN	TEGRA_GPIO_PP3
-#define TEGRA_GPIO_CODEC2_EN	TEGRA_GPIO_PP1
-#define TEGRA_GPIO_CODEC3_EN	TEGRA_GPIO_PV0
+//----------------------------------------------------------
+#define TEGRA_GPIO_CODEC1_EN	-1
+#define TEGRA_GPIO_CODEC2_EN	-1
+#define TEGRA_GPIO_CODEC3_EN	-1
+//\\--------------------------------------------------------
+
 
 #define TEGRA_GPIO_SPKR_EN		-1
 #define TEGRA_GPIO_HP_DET		TEGRA_GPIO_PR7
-#define TEGRA_GPIO_INT_MIC_EN		TEGRA_GPIO_PK3
-#define TEGRA_GPIO_EXT_MIC_EN		-1
+//----------------------------------------------------------
+#define TEGRA_GPIO_INT_MIC_EN		-1
+#define TEGRA_GPIO_EXT_MIC_EN		TEGRA_GPIO_PR0
+//\\--------------------------------------------------------
+
 
 #define TEGRA_SOC_OC_IRQ_BASE		TEGRA_NR_IRQS
 #define TEGRA_SOC_OC_NUM_IRQ		TEGRA_SOC_OC_IRQ_MAX
@@ -65,6 +71,17 @@
 #define TEGRA_GPIO_I2C5_SDA             TEGRA_GPIO_PZ7
 
 /* Camera related GPIOs */
+#ifdef CONFIG_QIC_GEN3_CAMERA_CONFIG
+#define CAM_PRI_RSTN			TEGRA_GPIO_PBB3
+#define CAM_FLASH_PWR			TEGRA_GPIO_PBB4
+#define CAM_FLASH_EN			TEGRA_GPIO_PBB7 // CAM_HC_SEL
+#define CAM_SEC_RSTN			TEGRA_GPIO_PQ6  // KB_COL6
+#define CAM_1V8_EN				TEGRA_GPIO_PCC1 // CAM_LDO1_EN
+#define CAM_WP					TEGRA_GPIO_PQ4 // KB_COL4, reserved for IMX091
+#define CAM_2V8_EN				TEGRA_GPIO_PCC2 // CAM_LDO2_EN
+#define CAM_PRI_PWRDWN			TEGRA_GPIO_PBB5
+#define CAM_SEC_PWRDWN			TEGRA_GPIO_PBB6
+#else
 #define CAM_RSTN			TEGRA_GPIO_PBB3
 #define CAM_FLASH_STROBE		TEGRA_GPIO_PBB4
 #define CAM1_POWER_DWN_GPIO		TEGRA_GPIO_PBB5
@@ -72,27 +89,43 @@
 #define CAM_AF_PWDN			TEGRA_GPIO_PBB7
 #define CAM_GPIO1			TEGRA_GPIO_PCC1
 #define CAM_GPIO2			TEGRA_GPIO_PCC2
+#endif
 
 /* Touchscreen definitions */
 #define TOUCH_GPIO_IRQ_RAYDIUM_SPI      TEGRA_GPIO_PK2
 #define TOUCH_GPIO_RST_RAYDIUM_SPI      TEGRA_GPIO_PK4
 
 /* Invensense MPU Definitions */
-#define MPU_GYRO_NAME           "mpu6050"
+#define MPU_GYRO_NAME           "mpu6500"
 #define MPU_GYRO_IRQ_GPIO       TEGRA_GPIO_PR3
-#define MPU_GYRO_ADDR           0x69
+#define MPU_GYRO_ADDR           0x68
 #define MPU_GYRO_BUS_NUM        0
-#define MPU_GYRO_ORIENTATION	{ 0, 1, 0, 1, 0, 0, 0, 0, -1 }
+#define MPU_GYRO_ORIENTATION	{ -1, 0, 0, 0, 1, 0, 0, 0, -1 }
 #define MPU_COMPASS_NAME        "ak8975"
 #define MPU_COMPASS_IRQ_GPIO    0
-#define MPU_COMPASS_ADDR        0x0D
+#define MPU_COMPASS_ADDR        0x0C
 #define MPU_COMPASS_BUS_NUM     0
-#define MPU_COMPASS_ORIENTATION { 0, 1, 0, 1, 0, 0, 0, 0, -1 }
+#define MPU_COMPASS_ORIENTATION { 0, -1, 0, 1, 0, 0, 0, 0, 1 }
+
+/* Capolla cm3218 Definitions */
+#define CM3218_NAME           "CM3218"
 
 /* Modem related GPIOs */
 #define MODEM_EN		TEGRA_GPIO_PP2
 #define MDM_RST			TEGRA_GPIO_PP0
 #define MDM_COLDBOOT		TEGRA_GPIO_PO5
+
+//----------------------------------------------------------
+/* switch microphone gpio definitions */
+#define TEGRA_GPIO_DMIC_SW1    TEGRA_GPIO_PI7 
+#define TEGRA_GPIO_DMIC_SW2	   TEGRA_GPIO_PC7
+#define TEGRA_GPIO_DMIC_LR     TEGRA_GPIO_PI3
+
+
+/* eS305 gpio definitions */
+#define GPIO_ES305_WAKEUP      -1
+#define GPIO_ES305_RESET       TEGRA_GPIO_PX7
+//\\--------------------------------------------------------
 
 int macallan_regulator_init(void);
 int macallan_suspend_init(void);
@@ -121,5 +154,9 @@ enum tegra_bb_type {
 #define UTMI1_PORT_OWNER_XUSB	0x1
 #define UTMI2_PORT_OWNER_XUSB	0x2
 #define HSIC1_PORT_OWNER_XUSB	0x4
+
+#define LED_OFF			0
+#define LED_ON			1
+#define LED_BLINKING	2
 
 #endif

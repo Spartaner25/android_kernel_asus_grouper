@@ -908,4 +908,17 @@ config TOUCHSCREEN_ELAN_TF_3K
           To compile this driver as a module, choose M here: the
           module will be called atmel_tsadcc.
 
+config TOUCHSCREEN_FT5X06
+ 	tristate "FT5X06 touchscreen: I2C Interface"
+ 	depends on I2C
+ 	help
+ 	  Say Y here if you have a touchscreen interface using an
+ 	  Ft5x06 controller, and your board-specific initialization
+ 	  code includes that in its table of I2C devices.
+
+ 	  If unsure, say N (but it's safe to say "Y").
+
+ 	  To compile this driver as a module, choose M here: the
+ 	  module will be called maXTouch.
+
 endif

@@ -24,6 +24,7 @@
 #include <linux/interrupt.h>
 #include <linux/max17048_battery.h>
 #include <linux/jiffies.h>
+#include <../board-macallan.h>
 
 #define MAX17048_VCELL		0x02
 #define MAX17048_SOC		0x04
@@ -41,10 +42,11 @@
 #define MAX17048_CMD		0xFF
 #define MAX17048_UNLOCK_VALUE	0x4a57
 #define MAX17048_RESET_VALUE	0x5400
-#define MAX17048_DELAY      (30*HZ)
+#define MAX17048_DELAY      (3*HZ)
 #define MAX17048_BATTERY_FULL	100
 #define MAX17048_BATTERY_LOW	15
 #define MAX17048_VERSION_NO	0x11
+#define MAX17048_VERSION_NO_2	0x12
 
 /* MAX17048 ALERT interrupts */
 #define MAX17048_STATUS_RI		0x0100 /* reset */
@@ -81,6 +83,24 @@ struct max17048_chip {
 	struct mutex mutex;
 };
 struct max17048_chip *max17048_data;
+
+#ifdef CONFIG_CHARGER_BQ24160
+#include <linux/i2c/bq24160_charger.h>
+#endif
+#ifdef CONFIG_PROJECT_EP5N
+void ep5n_a2_set_charge_led(int r_on, int g_on);
+#endif
+#ifdef CONFIG_SENSORS_INA230
+s32 ina230_get_shunt_voltage_uv(s32 *voltage_uV);
+#endif
+
+static int version;
+module_param(version, int, S_IRUGO);
+
+static int recharge_soc = 98;
+module_param(recharge_soc, int, S_IRUGO|S_IWUSR);
+
+extern int charge_stat;
 
 static int max17048_write_word(struct i2c_client *client, int reg, u16 value)
 {
@@ -174,6 +194,18 @@ static int max17048_get_ocv(struct max17048_chip *chip)
 	return ocv;
 }
 
+static int convert_soc(int soc, int reserve)
+{
+       if(reserve > 0 && reserve < 100)
+               soc = (soc - reserve) * 100 / (100 - reserve);
+
+       if(soc < 0)
+               soc = 0;
+       if(soc > 100)
+               soc = 100;
+       return soc;
+}
+
 static int max17048_get_property(struct power_supply *psy,
 			    enum power_supply_property psp,
 			    union power_supply_propval *val)
@@ -189,10 +221,10 @@ static int max17048_get_property(struct power_supply *psy,
 		val->intval = chip->status;
 		break;
 	case POWER_SUPPLY_PROP_VOLTAGE_NOW:
-		val->intval = chip->vcell;
+		val->intval = chip->vcell * 1000;
 		break;
 	case POWER_SUPPLY_PROP_CAPACITY:
-		val->intval = chip->soc;
+		val->intval = convert_soc(chip->soc, 5);
 		break;
 	case POWER_SUPPLY_PROP_HEALTH:
 		val->intval = chip->health;
@@ -201,8 +233,13 @@ static int max17048_get_property(struct power_supply *psy,
 		val->intval = chip->capacity_level;
 		break;
 	case POWER_SUPPLY_PROP_VOLTAGE_OCV:
-		val->intval = max17048_get_ocv(chip);
+		val->intval = max17048_get_ocv(chip) * 1000;
 		break;
+#ifdef CONFIG_CHARGER_BQ24160
+	case POWER_SUPPLY_PROP_TEMP:
+		val->intval = bq24160_battery_temp;
+		break;
+#endif
 	default:
 	return -EINVAL;
 	}
@@ -221,11 +258,22 @@ static void max17048_get_vcell(struct i2c_client *client)
 		chip->vcell = (uint16_t)(((vcell >> 4) * 125) / 100);
 }
 
+static int flash_save_voltage = 3500;
+module_param(flash_save_voltage, int, S_IRUGO|S_IWUSR);
+
+int max17048_check_voltage_for_flash(void)
+{
+	max17048_get_vcell(max17048_data->client);
+	printk("battery voltage = %d\n", max17048_data->vcell);
+	return max17048_data->vcell >= flash_save_voltage;
+}
+
 static void max17048_get_soc(struct i2c_client *client)
 {
 	struct max17048_chip *chip = i2c_get_clientdata(client);
 	struct max17048_battery_model *mdata = chip->pdata->model_data;
 	int soc;
+	int shunt_voltage;
 
 	soc = max17048_read_word(client, MAX17048_SOC);
 	if (soc < 0)
@@ -237,10 +285,10 @@ static void max17048_get_soc(struct i2c_client *client)
 			chip->soc = (uint16_t)soc >> 9;
 	}
 
-	if (chip->soc >= MAX17048_BATTERY_FULL && chip->charge_complete != 1)
-		chip->soc = MAX17048_BATTERY_FULL-1;
+	//if (chip->soc >= MAX17048_BATTERY_FULL && chip->charge_complete != 1)
+	//	chip->soc = MAX17048_BATTERY_FULL-1;
 
-	if (chip->soc >= MAX17048_BATTERY_FULL && chip->charge_complete) {
+	if ((chip->soc >= recharge_soc && chip->charge_complete) || chip->soc >= MAX17048_BATTERY_FULL) {
 		chip->status = POWER_SUPPLY_STATUS_FULL;
 		chip->soc = MAX17048_BATTERY_FULL;
 		chip->capacity_level = POWER_SUPPLY_CAPACITY_LEVEL_FULL;
@@ -254,16 +302,34 @@ static void max17048_get_soc(struct i2c_client *client)
 		chip->health = POWER_SUPPLY_HEALTH_GOOD;
 		chip->capacity_level = POWER_SUPPLY_CAPACITY_LEVEL_NORMAL;
 	}
+
+#if defined(CONFIG_SENSORS_INA230) && defined(CONFIG_PROJECT_EP5N)
+
+	if(chip->soc == MAX17048_BATTERY_FULL && charge_stat)
+		chip->status = POWER_SUPPLY_STATUS_FULL;
+	else if(charge_stat)
+		chip->status = POWER_SUPPLY_STATUS_CHARGING;
+	else
+		chip->status = POWER_SUPPLY_STATUS_DISCHARGING;
+
+	if(chip->status == POWER_SUPPLY_STATUS_FULL)
+		ep5n_a2_set_charge_led(LED_OFF, LED_ON);
+	else if(chip->status == POWER_SUPPLY_STATUS_CHARGING)
+		ep5n_a2_set_charge_led(LED_ON, LED_OFF);
+	else
+		ep5n_a2_set_charge_led(LED_OFF, LED_OFF);
+#endif
 }
 
 static uint16_t max17048_get_version(struct i2c_client *client)
 {
-	return swab16(max17048_read_word(client, MAX17048_VER));
+	return max17048_read_word(client, MAX17048_VER);
 }
 
 static void max17048_work(struct work_struct *work)
 {
 	struct max17048_chip *chip;
+	int charge_done = 0;
 
 	chip = container_of(work, struct max17048_chip, work.work);
 
@@ -273,8 +339,19 @@ static void max17048_work(struct work_struct *work)
 	if (chip->soc != chip->lasttime_soc ||
 		chip->status != chip->lasttime_status) {
 		chip->lasttime_soc = chip->soc;
+#ifdef CONFIG_PROJECT_EP5N
+		chip->lasttime_status = chip->status;
+#endif
 		power_supply_changed(&chip->battery);
 	}
+
+#if defined(CONFIG_PROJECT_EP5N) & defined(CONFIG_CHARGER_BQ24160)
+	bq24160_is_charge_done(&charge_done);
+	if(charge_done && chip->soc < recharge_soc)
+	{
+		bq24160_restart_charge();
+	}
+#endif
 
 	schedule_delayed_work(&chip->work, MAX17048_DELAY);
 }
@@ -285,18 +362,22 @@ void max17048_battery_status(int status,
 	if (!max17048_data)
 		return;
 
-	if (status == progress) {
+	if (status == POWER_SUPPLY_STATUS_CHARGING) {
 		max17048_data->status = POWER_SUPPLY_STATUS_CHARGING;
-	} else if (status == 4) {
+	} else if (status == POWER_SUPPLY_STATUS_FULL) {
 		max17048_data->charge_complete = 1;
-		max17048_data->soc = MAX17048_BATTERY_FULL;
-		max17048_data->status = POWER_SUPPLY_STATUS_FULL;
-		power_supply_changed(&max17048_data->battery);
+		//max17048_data->soc = MAX17048_BATTERY_FULL;
+		//max17048_data->status = POWER_SUPPLY_STATUS_FULL;
+		//power_supply_changed(&max17048_data->battery);
 		return;
 	} else {
 		max17048_data->status = POWER_SUPPLY_STATUS_DISCHARGING;
 		max17048_data->charge_complete = 0;
 	}
+#ifdef CONFIG_PROJECT_EP5N
+	if (max17048_data->status == POWER_SUPPLY_STATUS_CHARGING)
+		max17048_get_soc(max17048_data->client);
+#endif
 	power_supply_changed(&max17048_data->battery);
 
 	max17048_data->lasttime_status = max17048_data->status;
@@ -310,6 +391,10 @@ static enum power_supply_property max17048_battery_props[] = {
 	POWER_SUPPLY_PROP_CAPACITY,
 	POWER_SUPPLY_PROP_HEALTH,
 	POWER_SUPPLY_PROP_CAPACITY_LEVEL,
+	POWER_SUPPLY_PROP_VOLTAGE_OCV,
+#ifdef CONFIG_CHARGER_BQ24160
+	POWER_SUPPLY_PROP_TEMP,
+#endif
 };
 
 static int max17048_write_rcomp_seg(struct i2c_client *client,
@@ -485,18 +570,27 @@ static int max17048_initialize(struct max17048_chip *chip)
 
 int max17048_check_battery()
 {
-	uint16_t version;
+	//uint16_t version;
 
 	if (!max17048_data)
 		return -ENODEV;
 
 	version = max17048_get_version(max17048_data->client);
-	if (version != MAX17048_VERSION_NO) {
+	if (version != MAX17048_VERSION_NO && version != MAX17048_VERSION_NO_2) {
 		return -ENODEV;
 	}
 	return 0;
 }
 EXPORT_SYMBOL_GPL(max17048_check_battery);
+
+static int max17048_check_version(struct i2c_client *client)
+{
+	version = max17048_get_version(client);
+	if (version != MAX17048_VERSION_NO && version != MAX17048_VERSION_NO_2) {
+		return -ENODEV;
+	}
+	return version;
+}
 
 static irqreturn_t max17048_irq(int id, void *dev)
 {
@@ -688,7 +782,7 @@ static int __devinit max17048_probe(struct i2c_client *client,
 {
 	struct max17048_chip *chip;
 	int ret;
-	uint16_t version;
+	int version;
 	u16 val;
 
 	chip = devm_kzalloc(&client->dev, sizeof(*chip), GFP_KERNEL);
@@ -706,13 +800,23 @@ static int __devinit max17048_probe(struct i2c_client *client,
 		if (!chip->pdata)
 			return -ENODATA;
 	}
-
-	max17048_data = chip;
+	//Because max17048_battery_status can be called by other driver, we should set max17048_data = chip after chip->work being init.
+	//Otherwise, kernel may panic during boot.
+	//max17048_data = chip;
 	mutex_init(&chip->mutex);
 	chip->shutdown_complete = 0;
 	i2c_set_clientdata(client, chip);
 
-	version = max17048_check_battery();
+//The max17048 is on the mother board for EP5N A2. We can not check battery by max17048_check_battery function
+#ifdef CONFIG_CHARGER_BQ24160
+	if(!bq24160_battery_present()){
+		ret = -ENODEV;
+		goto error2;
+	}
+#endif
+
+	//version = max17048_check_battery();
+	version = max17048_check_version(client);
 	if (version < 0) {
 		ret = -ENODEV;
 		goto error2;
@@ -770,6 +874,9 @@ static int __devinit max17048_probe(struct i2c_client *client,
 		}
 	}
 
+	//Because max17048_battery_status can be called by other driver, we should set max17048_data = chip after chip->work being init.
+	//Otherwise, kernel may panic during boot.
+	max17048_data = chip;
 	return 0;
 irq_clear_error:
 	free_irq(client->irq, chip);
@@ -778,6 +885,7 @@ irq_reg_error:
 	power_supply_unregister(&chip->battery);
 error2:
 	mutex_destroy(&chip->mutex);
+	max17048_data = NULL;
 
 	return ret;
 }
@@ -887,7 +995,7 @@ static int __init max17048_init(void)
 {
 	return i2c_add_driver(&max17048_i2c_driver);
 }
-subsys_initcall(max17048_init);
+module_init(max17048_init);
 
 static void __exit max17048_exit(void)
 {

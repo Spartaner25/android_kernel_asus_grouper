@@ -38,11 +38,15 @@ static __initdata struct tegra_drive_pingroup_config macallan_drive_pinmux[] = {
 	SET_DRIVE_WITH_TYPE(GMA, ENABLE, DISABLE, DIV_1, 2, 2, FASTEST,
 								FASTEST, 1),
 };
+#if defined(CONFIG_PROJECT_EP5N)
+#include "board-macallan-pinmux-t11x-ep5n.h"
+#endif
 
-#include "board-macallan-pinmux-t11x.h"
-
-/* THIS IS FOR EXPERIMENTAL OR WORKAROUND PURPOSES. ANYTHING INSIDE THIS TABLE
- * SHOULD BE CONSIDERED TO BE PUSHED TO PINMUX SPREADSHEET FOR CONSISTENCY
+#if defined(CONFIG_PROJECT_PP3N)
+#include "board-macallan-pinmux-t11x-pp3n.h"
+#endif
+/* THIS IS FOR TESTING OR WORKAROUND PURPOSES. ANYTHING INSIDE THIS TABLE
+ * SHOULD BE PUSHED TO PINMUX SPREADSHEET FOR AUTOGEN OR FIXED
  */
 static __initdata struct tegra_pingroup_config manual_config_pinmux[] = {
 
@@ -53,6 +57,18 @@ static __initdata struct tegra_pingroup_config manual_config_pinmux[] = {
 	DEFAULT_PINMUX(ULPI_DATA5,    ULPI,        NORMAL,    NORMAL,   INPUT),
 	DEFAULT_PINMUX(ULPI_DATA6,    ULPI,        NORMAL,    NORMAL,   INPUT),
 	DEFAULT_PINMUX(ULPI_DATA7,    ULPI,        NORMAL,    NORMAL,   INPUT),
+
+	/* SDMMC CLKs are not supposed to be input enabled.
+	 * Verify if these can be removed. */
+	DEFAULT_PINMUX(SDMMC1_CLK,    SDMMC1,      NORMAL,    NORMAL,   INPUT),
+	DEFAULT_PINMUX(SDMMC3_CLK,    SDMMC3,      NORMAL,    NORMAL,   INPUT),
+	DEFAULT_PINMUX(SDMMC4_CLK,    SDMMC4,      NORMAL,    NORMAL,   INPUT),
+
+	/* DDC_PINMUX is not implemented in the spreadsheet.
+	 * Please file a bug and specify the right rules for DDC_PINMUX
+	 * so that an effort can be made. */
+	DDC_PINMUX(DDC_SCL, I2C4, NORMAL, NORMAL, INPUT, DISABLE, HIGH),
+	DDC_PINMUX(DDC_SDA, I2C4, NORMAL, NORMAL, INPUT, DISABLE, HIGH),
 };
 
 static void __init macallan_gpio_init_configure(void)

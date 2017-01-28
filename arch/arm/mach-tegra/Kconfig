@@ -946,4 +946,13 @@ config TEGRA_VDD_CORE_OVERRIDE
 	  When enabled, core rail can be fixed and locked at specified voltage
 	  within override range, and core modules clocks are capped at rates
 	  safe at override level.
+
+config PROJECT_EP5N
+        bool "NV EP5N board"
+
+config PROJECT_SKU_VARIANT_GIGASET
+        bool "For GIGASET"
+
+config QIC_GEN3_CAMERA_CONFIG
+        bool "NV Gen3 camera HW config"
 endif

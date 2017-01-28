@@ -25,6 +25,7 @@
 #include <linux/err.h>
 #include <linux/mfd/core.h>
 #include <linux/mfd/palmas.h>
+#include "../../arch/arm/mach-tegra/board.h"
 
 #define EXT_PWR_REQ (PALMAS_EXT_CONTROL_ENABLE1 |	\
 			PALMAS_EXT_CONTROL_ENABLE2 |	\
@@ -77,6 +78,12 @@ static const struct resource palma_extcon_resource[] = {
 		.name = "ID-IRQ",
 		.start = PALMAS_ID_IRQ,
 		.end = PALMAS_ID_IRQ,
+		.flags = IORESOURCE_IRQ,
+	},
+	{
+		.name = "VAC-IRQ",
+		.start = PALMAS_VAC_ACOK_IRQ,
+		.end = PALMAS_VAC_ACOK_IRQ,
 		.flags = IORESOURCE_IRQ,
 	},
 };
@@ -887,6 +894,11 @@ static void palmas_power_off(void)
 	if (!palmas_dev)
 		return;
 
+#ifdef CONFIG_CHARGER_BQ24160
+	extern int charge_stat;
+	if(charge_stat && !get_androidboot_mode_charger())
+		tegra_assert_system_reset(0, "charging");
+#endif
 	palmas_control_update(palmas_dev, PALMAS_DEV_CTRL, 1, 0);
 }
 
@@ -898,6 +910,13 @@ void palmas_reset(void)
 	palmas_control_update(palmas_dev, PALMAS_DEV_CTRL, 2, 2);
 }
 EXPORT_SYMBOL(palmas_reset);
+
+static char *ESversion = "ESversion";
+module_param(ESversion, charp, 0444);
+static char *ChipRevision = "ChipRevision";
+module_param(ChipRevision, charp, 0444);
+static char *PMICversion = "PMICversionPMICversion";
+module_param(PMICversion, charp, 0444);
 
 static int palmas_read_version_information(struct palmas *palmas)
 {
@@ -953,6 +972,9 @@ static int palmas_read_version_information(struct palmas *palmas)
 	dev_info(palmas->dev, "ES version %d.%d: ChipRevision 0x%02X%02X\n",
 		palmas->es_major_version, palmas->es_minor_version,
 		palmas->design_revision, palmas->sw_otp_version);
+         sprintf(ESversion, "ES%d.%d", palmas->es_major_version, palmas->es_minor_version);
+         sprintf(ChipRevision, "0x%02X%02X", palmas->design_revision, palmas->sw_otp_version);
+        sprintf(PMICversion, "ES%d.%d,0x%02X%02X", palmas->es_major_version, palmas->es_minor_version, palmas->design_revision, palmas->sw_otp_version);
 	return 0;
 }
 
@@ -1061,6 +1083,19 @@ static int __devinit palmas_i2c_probe(struct i2c_client *i2c,
 		}
 	}
 
+	/* Programming the system off type by Long press key */
+	if (pdata->poweron_lpk != PALMAS_SWOFF_COLDRST_PWRON_LPK_DEFAULT) {
+		ret = palmas_update_bits(palmas, PALMAS_PMU_CONTROL_BASE,
+					PALMAS_SWOFF_COLDRST,
+					PALMAS_SWOFF_COLDRST_PWRON_LPK,
+					pdata->poweron_lpk <<
+					PALMAS_SWOFF_COLDRST_PWRON_LPK_SHIFT);
+		if (ret) {
+			dev_err(palmas->dev,
+			"Failed to update poweron_lpk err: %d\n", ret);
+			goto err;
+		}
+	}
 	palmas_init_ext_control(palmas);
 
 	palmas_clk32k_init(palmas, pdata);
@@ -1074,6 +1109,8 @@ static int __devinit palmas_i2c_probe(struct i2c_client *i2c,
 
 	children[PALMAS_PMIC_ID].platform_data = pdata->pmic_pdata;
 	children[PALMAS_PMIC_ID].pdata_size = sizeof(*pdata->pmic_pdata);
+	children[PALMAS_GPADC_ID].platform_data = pdata->adc_pdata;
+	children[PALMAS_GPADC_ID].pdata_size = sizeof(*pdata->adc_pdata);
 
 	ret = mfd_add_devices(palmas->dev, -1,
 			      children, ARRAY_SIZE(palmas_children),

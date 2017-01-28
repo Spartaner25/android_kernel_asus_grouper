@@ -57,6 +57,8 @@ struct platform_device * __init macallan_host1x_init(void)
 
 /* HDMI Hotplug detection pin */
 #define macallan_hdmi_hpd	TEGRA_GPIO_PN7
+#define GEN3_HDMI_LS_OE	TEGRA_GPIO_PQ1
+#define GEN3_EN_VDD_HDMI	TEGRA_GPIO_PO1
 
 static struct regulator *macallan_hdmi_reg;
 static struct regulator *macallan_hdmi_pll;
@@ -212,6 +214,10 @@ static int macallan_hdmi_hotplug_init(struct device *dev)
 				__func__, PTR_ERR(macallan_hdmi_vddio));
 				macallan_hdmi_vddio = NULL;
 		} else {
+			gpio_request(GEN3_HDMI_LS_OE, "hdmi_ls_oe");
+			gpio_direction_output(GEN3_HDMI_LS_OE, 1);
+			gpio_request(GEN3_EN_VDD_HDMI, "enable vdd hdmi");
+			gpio_direction_output(GEN3_EN_VDD_HDMI, 1);
 			regulator_enable(macallan_hdmi_vddio);
 			mdelay(5);
 		}
@@ -368,7 +374,7 @@ static struct platform_device macallan_nvmap_device = {
 };
 
 static struct tegra_dc_sd_settings macallan_sd_settings = {
-	.enable = 1, /* enabled by default. */
+	.enable = 0, /* disable PRISM by default. */
 	.use_auto_pwm = false,
 	.hw_update_delay = 0,
 	.bin_width = -1,
@@ -428,7 +434,17 @@ static void macallan_panel_select(void)
 		panel = &dsi_s_wqxga_10_1;
 		break;
 	default:
+#if defined(CONFIG_PROJECT_EP5N)
+		panel = &dsi_s_wqxga_10_1;	//EP5N settings	
+#elif defined(CONFIG_PROJECT_PP3N)
+#ifdef CONFIG_PROJECT_PP3N_FHD
+		panel = &dsi_c_1080p_11_6;
+#else
+		panel = &dsi_c_11_6;
+#endif
+#else
 		panel = &dsi_p_wuxga_10_1;
+#endif
 		break;
 	}
 	if (panel) {
@@ -500,16 +516,6 @@ int __init macallan_panel_init(void)
 	__tegra_move_framebuffer(&macallan_nvmap_device,
 		tegra_fb_start, tegra_bootloader_fb_start,
 			min(tegra_fb_size, tegra_bootloader_fb_size));
-	/*
-	 * If the bootloader fb2 is valid, copy it to the fb2, or else
-	 * clear fb2 to avoid garbage on dispaly2.
-	 */
-	if (tegra_bootloader_fb2_size)
-		tegra_move_framebuffer(tegra_fb2_start,
-			tegra_bootloader_fb2_start,
-			min(tegra_fb2_size, tegra_bootloader_fb2_size));
-	else
-		tegra_clear_framebuffer(tegra_fb2_start, tegra_fb2_size);
 
 	macallan_disp1_device.dev.parent = &phost1x->dev;
 	err = platform_device_register(&macallan_disp1_device);
